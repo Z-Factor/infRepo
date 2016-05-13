@@ -1,0 +1,48 @@
+from Zhifeng_Lin_apriori import apriori
+from Zhifeng_Lin_apriori import SUPPORT_RATIO
+import MapReduce
+import sys
+import math
+
+mr = MapReduce.MapReduce()
+
+def parseCandidatesInput(rawData):
+    ret = []
+    for line in rawData:
+        line = (line.strip())[1:-1]
+        line = line.replace(' ', '')
+        ret.append(map(lambda x: int(x), line.split(',')))
+    return ret
+
+def mapper(baskets):
+    # extract the output file name from phase1
+    phase1OpFileName = baskets[0]
+    # remaining of the line are the baskets
+    baskets = baskets[1:]
+    # parse the output from phase1 into a candidate list
+    phase1OpData = open(phase1OpFileName, 'r')
+    candidates = parseCandidatesInput(phase1OpData)
+    for candidate in candidates:
+        local_cnt = 0
+        # capture the candidate cnt within the chunk
+        for basket in baskets:
+            if set(candidate).issubset(basket):
+                local_cnt += 1
+        # need to send the number of baskets within the chunk to the reducer as well        
+        mr.emit_intermediate(tuple(candidate), (local_cnt, len(baskets)))
+
+def reducer(key, cnts):
+    global_baskets_cnt = reduce(lambda x,y: x[1]+y[1], cnts) 
+    global_itemSets_cnt = reduce(lambda x,y: x[0]+y[0], cnts) 
+    # only print out the global freq. itemsets and their cnt
+    if global_itemSets_cnt >= int(math.ceil(global_baskets_cnt * SUPPORT_RATIO)): 
+        mr.emit((key, global_itemSets_cnt))
+
+if __name__ == '__main__':
+    # read the baskets file into a list separated by newline
+    inputdata = open(sys.argv[1], 'r').read().split('\n')
+    phase1OpFileName = sys.argv[2]
+    # add the output file name of phase1 to the beginning of each chunk
+    inputdata = map(lambda x: '["' + phase1OpFileName + '",' + x[1:], inputdata)
+    mr.execute(inputdata, mapper, reducer)
+
